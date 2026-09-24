@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>开机第一屏管理器</title>
+<script>
+  // 尽早确定主题，避免闪烁：本地设置 + 缓存的系统状态 + prefers-color-scheme 兜底
+  (function () {
+    try {
+      var mode = localStorage.getItem("bootlogo_theme") || "auto";
+      var cached = localStorage.getItem("bootlogo_sysdark");
+      var prefersDark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var prefersLight = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+      var sysDark = cached === "1" ? true : (cached === "0" ? false : (prefersLight ? false : true));
+      var dark = mode === "dark" || (mode === "auto" && sysDark);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+  })();
+</script>
+<style>
+  :root, html[data-theme="dark"]{
+    --bg:#0f1115; --card:#181b22; --card2:#1f232c; --line:#2a2f3a;
+    --fg:#e8eaee; --sub:#9aa3b2; --accent:#4f8cff;
+    --ok:#3ecf8e; --warn:#ffb02e; --err:#ff5c6c;
+    --btn-fg:#ffffff; --toast-bg:#252a34; --danger-line:#4a2a30;
+    --ok-bg:rgba(62,207,142,.15); --err-bg:rgba(255,92,108,.15);
+    --active-bg:rgba(62,207,142,.08); --seg-bg:#12151b;
+    --warn-bg:rgba(255,176,46,.12);
+    --shadow:none; color-scheme:dark;
+  }
+  html[data-theme="light"]{
+    --bg:#f2f4f7; --card:#ffffff; --card2:#f7f9fc; --line:#e3e7ef;
+    --fg:#1b1f27; --sub:#6b7484; --accent:#2f6fed;
+    --ok:#0f9d63; --warn:#b8770a; --err:#d93b4c;
+    --btn-fg:#ffffff; --toast-bg:#ffffff; --danger-line:#f2ccd1;
+    --ok-bg:rgba(15,157,99,.12); --err-bg:rgba(217,59,76,.12);
+    --active-bg:rgba(15,157,99,.07); --seg-bg:#e9edf3;
+    --warn-bg:rgba(184,119,10,.12);
+    --shadow:0 1px 3px rgba(16,24,40,.07); color-scheme:light;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.6 -apple-system,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    padding:16px 14px calc(28px + env(safe-area-inset-bottom));
+    transition:background .18s ease,color .18s ease;
+  }
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{color:var(--sub);font-size:12.5px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+        margin-bottom:13px;box-shadow:var(--shadow);transition:background .18s ease,border-color .18s ease}
+  .card h2{font-size:13.5px;margin:0 0 11px;color:var(--sub);font-weight:600;letter-spacing:.3px}
+  .current{display:flex;align-items:center;gap:12px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto;box-shadow:0 0 8px var(--ok)}
+  .dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  .current .name{font-size:17px;font-weight:600;word-break:break-all}
+  .current .meta{color:var(--sub);font-size:12.5px}
+  .row{display:flex;align-items:center;gap:7px;padding:9px 10px;border:1px solid var(--line);
+       border-radius:11px;background:var(--card2);margin-bottom:8px;transition:background .18s ease;
+       -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .row.active{border-color:var(--ok);background:var(--active-bg)}
+  .row .info{flex:1;min-width:0}
+  .row .nm{font-weight:600;word-break:break-all;font-size:14px;line-height:1.3}
+  .row .dt{color:var(--sub);font-size:11.5px;margin-top:1px}
+  .row .handle{flex:0 0 auto;width:26px;height:38px;display:flex;align-items:center;justify-content:center;
+       color:var(--sub);font-size:17px;letter-spacing:-2px;cursor:grab;touch-action:none;
+       user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;border-radius:8px}
+  .row .handle:active{cursor:grabbing;color:var(--fg)}
+  .row.dragging{border-color:var(--accent);background:var(--card);box-shadow:0 10px 28px rgba(0,0,0,.34);
+       position:relative;z-index:5;will-change:transform;transition:none}
+  .row.dragging .handle{color:var(--accent)}
+  .row .ord{display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
+  .row .ord button{width:24px;height:17px;padding:0;border:1px solid var(--line);background:transparent;
+       color:var(--sub);border-radius:5px;font-size:9px;line-height:1;font-family:inherit}
+  .row .ord button:disabled{opacity:.28}
+  .row .ord button:active:not(:disabled){color:var(--fg);border-color:var(--accent)}
+  .btn{border:0;border-radius:9px;padding:7px 11px;font-size:13px;font-weight:600;
+       background:var(--accent);color:var(--btn-fg);flex:0 0 auto;
+       font-family:inherit;transition:transform .12s ease,opacity .18s ease}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+  .btn.danger{background:transparent;border:1px solid var(--danger-line);color:var(--err)}
+  .btn:disabled{opacity:.42}
+  .btn:active:not(:disabled){transform:scale(.97)}
+  .toolbar{display:flex;gap:9px;margin-bottom:13px;flex-wrap:wrap}
+  .toolbar .btn{flex:1;text-align:center;padding:11px;min-width:96px}
+  .empty{color:var(--sub);font-size:13.5px;text-align:center;padding:16px 0}
+  .hint{color:var(--sub);font-size:12.5px;margin-top:9px;line-height:1.7}
+  .warnbox{background:var(--warn-bg);border:1px solid var(--line);border-radius:10px;
+           padding:9px 11px;font-size:12.5px;line-height:1.7;color:var(--fg);margin-bottom:10px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+       background:var(--ok-bg);color:var(--ok);margin-left:7px;vertical-align:1px;font-weight:600}
+  .tag.warn{background:var(--warn-bg);color:var(--warn)}
+  .seg{display:inline-flex;background:var(--seg-bg);border:1px solid var(--line);border-radius:10px;
+       padding:3px;gap:2px;flex:0 0 auto}
+  .seg button{border:0;background:transparent;color:var(--sub);font-size:12px;font-family:inherit;
+              padding:6px 9px;border-radius:7px;font-weight:600;white-space:nowrap;
+              transition:background .16s ease,color .16s ease}
+  .seg button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+  .path{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--sub);
+        background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+        margin-bottom:10px;word-break:break-all}
+  /* 槽位选择 */
+  .slot{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);
+        border-radius:10px;background:var(--card2);margin-bottom:7px}
+  .slot.on{border-color:var(--accent)}
+  .slot input[type=checkbox]{width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
+  .slot .si{flex:1;min-width:0}
+  .slot .sn{font-weight:600;font-size:13.5px}
+  .slot .sd{color:var(--sub);font-size:11.5px;word-break:break-all}
+  #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
+         background:var(--toast-bg);border:1px solid var(--line);color:var(--fg);padding:11px 17px;
+         border-radius:11px;font-size:13.5px;max-width:86%;opacity:0;pointer-events:none;
+         transition:opacity .25s ease,transform .25s ease;z-index:9;word-break:break-all;
+         box-shadow:0 6px 22px rgba(0,0,0,.18)}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.ok{border-color:var(--ok)}
+  #toast.err{border-color:var(--err)}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <h1>开机第一屏管理器</h1>
+    <div class="sub">换开机时最先看到的那张图，重启即见</div>
+  </div>
+  <div class="seg" id="theme-seg" role="group" aria-label="主题风格">
+    <button type="button" data-mode="auto">跟随系统</button>
+    <button type="button" data-mode="light">浅色</button>
+    <button type="button" data-mode="dark">深色</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>当前第一屏</h2>
+  <div class="current">
+    <span class="dot" id="cur-dot"></span>
+    <div style="min-width:0">
+      <div class="name" id="cur-name">读取中…</div>
+      <div class="meta" id="cur-meta"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>第一屏素材库</h2>
+  <div id="library"><div class="empty">读取中…</div></div>
+  <div class="hint">点「替换」换第一屏，<b>重启就能看到</b>；正在用的那张删不掉。<br>
+    排序：按住左边的 <b>⠿</b> 拖动，或者用 <b>▲▼</b> 一格一格移。<br>
+    开机图在分区里有几个状态（比如解锁 BL 后显示的会带个小标记），<b>会自动一起换掉</b>，不用你选。</div>
+</div>
+
+<div class="toolbar">
+  <button class="btn ghost" id="btn-refresh">刷新</button>
+  <button class="btn ghost" id="btn-scan">扫描目录</button>
+  <button class="btn ghost" id="btn-browse">选择文件</button>
+  <button class="btn ghost" id="btn-reset">恢复原厂</button>
+</div>
+
+<div class="card" id="scan-card" style="display:none">
+  <h2>可导入的第一屏</h2>
+  <div id="scan-list"></div>
+  <div class="hint" id="scan-hint">把 bmp 丢进「下载」目录，点扫描就能导进来。</div>
+</div>
+
+<div class="card" id="browse-card" style="display:none">
+  <h2>选择文件</h2>
+  <div class="path" id="browse-path">/sdcard</div>
+  <div id="browse-list"></div>
+  <div class="hint">点文件夹进去翻，找到 bmp 点右边的「导入」。<br>
+    换目录时用第一行的「⬆ 上一级」，或者点「选择文件」重新从「下载」目录开始。</div>
+</div>
+
+<div class="card">
+  <h2>怎么做出能用的图</h2>
+  <div class="hint" id="fmt-hint">读取中…</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const MODDIR = "/data/adb/modules/custom_bootlogo";
+  const CTL = MODDIR + "/bin/ctl.sh";
+  const THEME_KEY = "bootlogo_theme";
+  const SYS_KEY = "bootlogo_sysdark";
+  const RESTORE_NAME = "恢复原厂第一屏";
+
+  let busy = false, execMode = "sync", cbSeq = 0;
+  let themeMode = "auto";
+
+  const $ = id => document.getElementById(id);
+  const bridgeReady = () => typeof window.ksu !== "undefined" && typeof window.ksu.exec === "function";
+  const quote = v => "'" + String(v).replace(/'/g, "'\\''") + "'";
+  const ctlCmd = (...a) => [quote(CTL), ...a.map(quote)].join(" ");
+
+  /* ------------------ 主题 ------------------ */
+  const prefersDark = () => !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  function paintTheme(dark) { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }
+  function paintSeg() {
+    document.querySelectorAll("#theme-seg button").forEach(b => {
+      b.setAttribute("aria-pressed", b.dataset.mode === themeMode ? "true" : "false");
+    });
+  }
+  async function detectSystemDark() {
+    if (bridgeReady()) {
+      try {
+        const out = await run("cmd uimode night 2>/dev/null");
+        const m = /night\s*mode\s*:\s*(\w+)/i.exec(String(out || ""));
+        if (m) { if (/^yes/i.test(m[1])) return true; if (/^no/i.test(m[1])) return false; }
+      } catch (_) {}
+      try {
+        const out2 = await run("settings get secure ui_night_mode 2>/dev/null");
+        const v = String(out2 || "").trim();
+        if (v === "2") return true;
+        if (v === "1") return false;
+      } catch (_) {}
+    }
+    return prefersDark();
+  }
+  async function applyTheme(refreshSystem) {
+    if (themeMode === "dark") { paintTheme(true); paintSeg(); return; }
+    if (themeMode === "light") { paintTheme(false); paintSeg(); return; }
+    paintSeg();
+    if (refreshSystem) {
+      const dark = await detectSystemDark();
+      try { localStorage.setItem(SYS_KEY, dark ? "1" : "0"); } catch (_) {}
+      paintTheme(dark);
+    } else { paintTheme(prefersDark()); }
+  }
+  async function setThemeMode(mode) {
+    themeMode = mode;
+    try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
+    await applyTheme(true);
+  }
+
+  /* ------------------ 通用 ------------------ */
+  function toast(text, kind) {
+    const t = $("toast");
+    t.textContent = text;
+    t.className = "show" + (kind ? " " + kind : "");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.className = ""; }, 3600);
+  }
+  function bytes(v) {
+    let n = Number(v);
+    if (!isFinite(n) || n < 0) return "未知大小";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i ? n.toFixed(n >= 10 ? 0 : 1) : n) + " " + u[i];
+  }
+  function friendly(text) {
+    const line = String(text || "").split(/\r?\n/).find(l => l.trim().startsWith("ERROR ")) || "";
+    let m = line.replace(/^ERROR\s*/, "").trim();
+    if (!m) m = "操作失败，请重试";
+    if (/找不到该第一屏|找不到该动画/.test(m)) m = "找不到这张，请刷新后重试";
+    if (/找不到文件/.test(m)) m = "找不到文件，可能已被移动或删除";
+    if (/备份失败|拒绝写/.test(m)) m = "原厂分区备份失败，为安全起见没有写入";
+    return m;
+  }
+
+  function detectExecMode() {
+    return new Promise(resolve => {
+      let done = false;
+      const settle = mode => { if (!done) { done = true; resolve(mode); } };
+      const tryForm = len => {
+        const name = "__probe_" + Date.now() + "_" + (++cbSeq);
+        const timer = setTimeout(() => { delete window[name]; }, 600);
+        window[name] = () => { clearTimeout(timer); delete window[name]; settle(len === 3 ? "async" : "async2"); };
+        try {
+          const ret = window.ksu.exec.apply(window.ksu, ["echo probe", null, "window." + name].slice(0, len));
+          if (ret !== undefined && ret !== null && !(ret && typeof ret.then === "function")) {
+            clearTimeout(timer); delete window[name]; settle("sync");
+          }
+        } catch (_) { clearTimeout(timer); delete window[name]; settle("sync"); }
+      };
+      tryForm(3);
+      setTimeout(() => { if (!done) tryForm(2); }, 650);
+      setTimeout(() => settle("sync"), 1400);
+    });
+  }
+
+  async function run(text) {
+    if (!bridgeReady()) throw new Error("未检测到 KernelSU / SukiSU 的模块接口，请在模块管理器中打开本页面。");
+    if (execMode === "async" || execMode === "async2") {
+      return new Promise((resolve, reject) => {
+        const name = "__cb_" + (++cbSeq);
+        const timer = setTimeout(() => { delete window[name]; reject(new Error("命令执行超时")); }, 60000);
+        window[name] = (code, stdout) => { clearTimeout(timer); delete window[name]; resolve(stdout == null ? "" : String(stdout)); };
+        try { window.ksu.exec(text, null, "window." + name); }
+        catch (e) { clearTimeout(timer); delete window[name]; reject(e); }
+      });
+    }
+    const v = await Promise.resolve(window.ksu.exec(text));
+    return v == null ? "" : String(v);
+  }
+  const ctl = (...a) => run(ctlCmd(...a));
+
+  async function withBusy(fn) {
+    if (busy) return;
+    busy = true;
+    // 只记下「本来可用」的可交互控件，结束后只恢复这些——不能无条件全启用，
+    // 否则会把「正在用」「格式不合格」这些语义禁用态一起清掉。
+    // 勾选框也要算进来，不然保存途中再点一下会被 busy 悄悄丢掉、勾选又弹回去。
+    const touched = Array.from(document.querySelectorAll("button:not(:disabled), input:not(:disabled)"));
+    touched.forEach(b => b.disabled = true);
+    try { await fn(); }
+    catch (e) { toast(e && e.message ? e.message : "操作失败", "err"); }
+    finally {
+      busy = false;
+      touched.forEach(b => b.disabled = false);
+      paintSeg();
+      syncOrderButtons();
+    }
+  }
+
+  /* ------------------ 排序：拖拽 + 按钮保底 ------------------ */
+  const HAS_POINTER = typeof window.PointerEvent === "function";
+  const EASE = "cubic-bezier(.22,.72,.28,1)";
+  const SLIDE_MS = 200;
+  let drag = null;
+
+  function rowNames(box) {
+    return Array.from(box.querySelectorAll(".row")).map(r => r.dataset.name).filter(Boolean);
+  }
+  // shell 是按 order.txt 重新编号的，所以换序后要按 DOM 实际位置刷新每行的编号，
+  // 否则「替换 / 删除」会用到过期的编号 → 换错图 / 删错文件。
+  function renumber(box) {
+    Array.from(box.querySelectorAll(".row")).forEach((r, i) => { r.dataset.idx = String(i + 1); });
+  }
+  async function persistOrder(box) {
+    const names = rowNames(box);
+    if (!names.length) return;
+    await withBusy(async () => {
+      const res = await ctl("order", ...names);
+      if (/OK /.test(res)) { toast("排序已保存", "ok"); renumber(box); syncOrderButtons(); }
+      else { toast(friendly(res), "err"); await refresh(); }
+    });
+  }
+  function pointY(e) {
+    if (e.touches && e.touches.length) return e.touches[0].clientY;
+    if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientY;
+    return e.clientY;
+  }
+  function captureRects(box) {
+    const m = new Map();
+    const skip = drag && drag.row;
+    box.querySelectorAll(".row").forEach(r => { if (r !== skip) m.set(r, r.getBoundingClientRect().top); });
+    return m;
+  }
+  function playFlip(box, before) {
+    const skip = drag && drag.row;
+    box.querySelectorAll(".row").forEach(r => {
+      if (r === skip) return;
+      const b = before.get(r);
+      if (b == null) return;
+      const dy = b - r.getBoundingClientRect().top;
+      if (Math.abs(dy) < 0.5) return;
+      r.style.transition = "none";
+      r.style.transform = `translateY(${dy}px)`;
+      void r.offsetHeight;
+      r.style.transition = `transform ${SLIDE_MS}ms ${EASE}`;
+      r.style.transform = "";
+    });
+  }
+  function reorderTo(clientY) {
+    if (!drag) return;
+    const { row, box } = drag;
+    const others = Array.from(box.querySelectorAll(".row")).filter(r => r !== row);
+    let anchor = null;
+    for (const o of others) {
+      const r = o.getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) { anchor = o; break; }
+    }
+    if (anchor ? row.nextElementSibling === anchor : box.lastElementChild === row) return;
+    const before = captureRects(box);
+    const topBefore = row.getBoundingClientRect().top;
+    if (anchor) box.insertBefore(row, anchor); else box.appendChild(row);
+    const topAfter = row.getBoundingClientRect().top;
+    drag.offset += (topBefore - topAfter);
+    row.style.transform = `translateY(${drag.offset}px)`;
+    playFlip(box, before);
+  }
+  function endDrag() {
+    if (!drag) return;
+    const { row, onMove, onUp, moved, box } = drag;
+    ["pointermove", "pointerup", "pointercancel", "touchmove", "touchend", "touchcancel", "mousemove", "mouseup"]
+      .forEach(t => { document.removeEventListener(t, onMove); document.removeEventListener(t, onUp); });
+    row.classList.remove("dragging");
+    row.style.transition = `transform ${SLIDE_MS}ms ${EASE}`;
+    row.style.transform = "";
+    setTimeout(() => { row.style.transition = ""; row.style.transform = ""; }, SLIDE_MS + 40);
+    drag = null;
+    if (moved) persistOrder(box);
+  }
+  function attachDragHandle(handle, row, box) {
+    const onDown = e => {
+      if (busy || drag) return;
+      const y0 = pointY(e);
+      if (typeof y0 !== "number") return;
+      drag = { row, box, offset: 0, lastY: y0, moved: false, onMove: null, onUp: null };
+      row.classList.add("dragging");
+      const onMove = ev => {
+        if (!drag) return;
+        const y = pointY(ev);
+        if (typeof y !== "number") return;
+        if (ev.cancelable) ev.preventDefault();
+        drag.offset += (y - drag.lastY);
+        drag.lastY = y;
+        row.style.transform = `translateY(${drag.offset}px)`;
+        const prevBefore = row.previousElementSibling;
+        reorderTo(y);
+        if (row.previousElementSibling !== prevBefore) drag.moved = true;
+      };
+      const onUp = () => endDrag();
+      drag.onMove = onMove;
+      drag.onUp = onUp;
+      if (HAS_POINTER) {
+        document.addEventListener("pointermove", onMove, { passive: false });
+        document.addEventListener("pointerup", onUp);
+        document.addEventListener("pointercancel", onUp);
+      }
+      document.addEventListener("touchmove", onMove, { passive: false });
+      document.addEventListener("touchend", onUp);
+      document.addEventListener("touchcancel", onUp);
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      if (e.cancelable) e.preventDefault();
+    };
+    handle.addEventListener(HAS_POINTER ? "pointerdown" : "touchstart", onDown, { passive: false });
+    handle.addEventListener("mousedown", onDown);
+  }
+  function attachOrderButtons(up, down, row, box) {
+    up.onclick = () => {
+      const prev = row.previousElementSibling;
+      if (!prev || !prev.classList || !prev.classList.contains("row")) return;
+      const before = captureRects(box);
+      box.insertBefore(row, prev);
+      playFlip(box, before);
+      persistOrder(box);
+    };
+    down.onclick = () => {
+      const next = row.nextElementSibling;
+      if (!next || !next.classList || !next.classList.contains("row")) return;
+      const before = captureRects(box);
+      box.insertBefore(next, row);
+      playFlip(box, before);
+      persistOrder(box);
+    };
+  }
+  function syncOrderButtons() {
+    const box = $("library");
+    if (!box) return;
+    const rows = Array.from(box.querySelectorAll(".row"));
+    rows.forEach((r, i) => {
+      const btns = r.querySelectorAll(".ord button");
+      if (btns.length !== 2) return;
+      btns[0].disabled = i === 0;
+      btns[1].disabled = i === rows.length - 1;
+    });
+  }
+
+  /* ------------------ 数据 ------------------ */
+  async function refresh() {
+    const box = $("library");
+    const raw = String(await ctl("info")).replace(/\r\n/g, "\n");
+    const at = raw.indexOf("\n##LIST\n");
+    // 输出不像 info 的成功结果 → 报错并保留上次渲染，不能当成「库是空的」
+    if (at < 0) {
+      toast(friendly(raw), "err");
+      if (!box.querySelector(".row")) box.innerHTML = '<div class="empty">读取失败，点「刷新」重试</div>';
+      return;
+    }
+    const st = raw.slice(0, at);
+    const ls = raw.slice(at + 8);
+
+    const props = {};
+    st.split("\n").forEach(l => { const i = l.indexOf("="); if (i > 0) props[l.slice(0, i)] = l.slice(i + 1); });
+
+    const an = props.active && props.active !== "无" ? props.active : "未设置";
+    $("cur-name").textContent = an === RESTORE_NAME ? "原厂第一屏" : an;
+    const parts = [];
+    parts.push(props.applied === "yes" ? "分区里就是这张" : "分区里不是这张（可能被 ROM 刷回原厂了）");
+    if (props.part) parts.push("分区 " + bytes(props.part_size));
+    parts.push(props.backup && props.backup !== "0" ? "原厂已备份" : "尚未备份");
+    $("cur-meta").textContent = parts.join(" · ");
+    // 需要的图片格式（由 info 给出，界面不暴露「槽位」这个概念）
+    const fh = $("fmt-hint");
+    if (fh) {
+      fh.innerHTML = props.target_dims
+        ? "第一屏的图必须是 <b>" + props.target_dims + " " + props.target_bpp + "bpp 的 BMP</b>，" +
+          "字节长度要和原来的图一致（<b>" + props.target_len + " 字节</b>）。<br>" +
+          "随便一张图 → 用电脑跑 <code>tools/logo_convert.py 你的图.png 输出.bmp --size " +
+          props.target_dims + "</code> 转一下就能用（需要 pillow）。<br>" +
+          "手机上也行：把转换好的 bmp 放进「下载」目录，再点「扫描目录」。"
+        : "读不到分区信息（这台机型可能认不出来，那就不会写入分区）。";
+    }
+    const sh = $("scan-hint");
+    if (sh && props.target_dims) sh.textContent = "把 " + props.target_dims + " " + props.target_bpp + "bpp 的 bmp 丢进「下载」目录，点扫描就能导进来（格式不符的会标出来）。";
+    const dot = $("cur-dot");
+    dot.className = "dot" + (props.applied === "yes" ? "" : " warn");
+
+    const rows = ls.split("\n").filter(l => l.trim());
+    if (!rows.length) { box.innerHTML = '<div class="empty">素材库为空</div>'; return; }
+    box.innerHTML = "";
+    rows.forEach(line => {
+      const p = line.split("\t");
+      if (p.length < 5) return;
+      // 名字里万一带 tab 会把字段挤位：固定取头一个和末尾三个，中间的全算名字
+      const idx = p[0], name = p.slice(1, -3).join("\t");
+      const size = p[p.length - 3], active = p[p.length - 2], info = p[p.length - 1];
+      const row = document.createElement("div");
+      row.className = "row" + (active === "yes" ? " active" : "");
+      row.dataset.name = name;
+      row.dataset.idx = idx;
+
+      const handle = document.createElement("div");
+      handle.className = "handle"; handle.textContent = "⠿"; handle.title = "按住拖动排序";
+      row.appendChild(handle);
+      attachDragHandle(handle, row, box);
+
+      const left = document.createElement("div");
+      left.className = "info";
+      const nmEl = document.createElement("div"); nmEl.className = "nm"; nmEl.textContent = name;
+      const dtEl = document.createElement("div"); dtEl.className = "dt";
+      dtEl.textContent = bytes(size) + (info ? " · " + info : "");
+      if (active === "yes") {
+        const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "正在用";
+        dtEl.appendChild(tag);
+      }
+      left.appendChild(nmEl); left.appendChild(dtEl);
+      row.appendChild(left);
+
+      const ord = document.createElement("div");
+      ord.className = "ord";
+      const up = document.createElement("button"); up.type = "button"; up.textContent = "▲"; up.title = "上移";
+      const down = document.createElement("button"); down.type = "button"; down.textContent = "▼"; down.title = "下移";
+      ord.appendChild(up); ord.appendChild(down);
+      row.appendChild(ord);
+      attachOrderButtons(up, down, row, box);
+
+      const apply = document.createElement("button");
+      apply.className = "btn";
+      const isActive = active === "yes";
+      const settled = isActive && props.applied === "yes";   // 正在用，且分区里确认就是它
+      apply.textContent = settled ? "正在用" : (isActive ? "重新写入" : "替换");
+      apply.disabled = settled;
+      apply.onclick = () => withBusy(async () => {
+        // 用编号的话要现读（排序后 shell 会按 order.txt 重新编号）；
+        // 正在用的那张走 deploy —— 改了槽位勾选之后得能把它重新写进新槽位，
+        // 否则文档教的「勾上第 3 个槽位再替换一次」根本点不到按钮。
+        const r = isActive ? await ctl("deploy") : await ctl("select", row.dataset.idx);
+        if (/OK /.test(r)) {
+          toast(isActive ? "已按当前槽位重新写入，重启就能看到" : "已替换为 " + name + "，重启就能看到", "ok");
+          await refresh();
+        } else toast(friendly(r), "err");
+      });
+      row.appendChild(apply);
+
+      if (active !== "yes") {
+        const del = document.createElement("button");
+        del.className = "btn danger";
+        del.textContent = "删除";
+        del.onclick = () => withBusy(async () => {
+          const r = await ctl("delete", row.dataset.idx);
+          if (/OK /.test(r)) { toast("已删除 " + name, "ok"); await refresh(); }
+          else toast(friendly(r), "err");
+        });
+        row.appendChild(del);
+      }
+      box.appendChild(row);
+    });
+    syncOrderButtons();
+  }
+
+  async function scan() {
+    const out = await ctl("scan");
+    const rows = String(out).split(/\r?\n/).filter(l => l.trim());
+    const card = $("scan-card"), box = $("scan-list");
+    card.style.display = "";
+    if (!rows.length) { box.innerHTML = '<div class="empty">没有找到可导入的 bmp</div>'; return; }
+    box.innerHTML = "";
+    rows.forEach(line => {
+      const p = line.split("\t");
+      const path = p[0], size = p[1], ok = p[2];
+      const row = document.createElement("div");
+      row.className = "row";
+      const left = document.createElement("div");
+      left.className = "info";
+      const nmEl = document.createElement("div"); nmEl.className = "nm"; nmEl.textContent = path;
+      const dtEl = document.createElement("div"); dtEl.className = "dt";
+      dtEl.textContent = bytes(size) + (ok === "yes" ? "" : " · 尺寸/格式不符");
+      left.appendChild(nmEl); left.appendChild(dtEl);
+      row.appendChild(left);
+      const btn = document.createElement("button");
+      btn.className = "btn"; btn.textContent = "导入";
+      btn.disabled = ok !== "yes";
+      btn.onclick = () => withBusy(async () => {
+        const r = await ctl("import", path);
+        if (/OK /.test(r)) { toast("已导入 " + (r.slice(r.indexOf("=") + 1) || ""), "ok"); await scan(); await refresh(); }
+        else toast(friendly(r), "err");
+      });
+      row.appendChild(btn);
+      box.appendChild(row);
+    });
+  }
+
+  /* ------------------ 自己选文件 ------------------ */
+  async function browse(path) {
+    let out;
+    try { out = String(await ctl("ls", path)); }
+    catch (e) { toast("读取目录失败", "err"); return; }
+    if (/^\s*ERROR/.test(out)) { toast(friendly(out), "err"); return; }
+
+    $("browse-path").textContent = path;
+    $("browse-card").style.display = "";
+    const rows = out.split(/\r?\n/).filter(l => l.trim());
+    const box = $("browse-list");
+    box.innerHTML = "";
+
+    const atRoot = ["/sdcard", "/storage", "/data/local/tmp", "/mnt/media_rw"].indexOf(path) >= 0;
+    if (!atRoot) {
+      const up = document.createElement("div");
+      up.className = "row";
+      const ui2 = document.createElement("div");
+      ui2.className = "info";
+      const un = document.createElement("div"); un.className = "nm"; un.textContent = "⬆ 上一级";
+      ui2.appendChild(un); up.appendChild(ui2);
+      up.onclick = () => withBusy(() => browse(path.replace(/\/[^/]+$/, "") || "/sdcard"));
+      box.appendChild(up);
+    }
+    if (!rows.length) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = "这个目录里没有子文件夹或 bmp";
+      box.appendChild(e);
+      return;
+    }
+    rows.forEach(line => {
+      const p = line.split("\t");
+      const row = document.createElement("div");
+      row.className = "row";
+      const info = document.createElement("div");
+      info.className = "info";
+      const nm = document.createElement("div"); nm.className = "nm";
+      const dt = document.createElement("div"); dt.className = "dt";
+      if (p[0] === "D") {
+        nm.textContent = "📁 " + p[1];
+        dt.textContent = "文件夹";
+        row.appendChild(info); info.appendChild(nm); info.appendChild(dt);
+        row.onclick = () => withBusy(() => browse(p[2]));
+      } else {
+        nm.textContent = p[1];
+        dt.textContent = bytes(p[2]);
+        row.appendChild(info); info.appendChild(nm); info.appendChild(dt);
+        const b = document.createElement("button");
+        b.className = "btn"; b.textContent = "导入";
+        b.onclick = () => withBusy(async () => {
+          const r = await ctl("import", p[3]);
+          if (/OK /.test(r)) { toast("已导入 " + (r.slice(r.indexOf("=") + 1) || ""), "ok"); await refresh(); }
+          else toast(friendly(r), "err");
+        });
+        row.appendChild(b);
+      }
+      box.appendChild(row);
+    });
+  }
+
+  /* ------------------ 启动 ------------------ */
+  async function boot() {
+    try { themeMode = localStorage.getItem(THEME_KEY) || "auto"; } catch (_) { themeMode = "auto"; }
+    // 先探测桥的调用形式：applyTheme 会 exec 问系统深浅色，探测前 execMode 还是默认的
+    // "sync"，在回调式桥上会拿到空结果、把「跟随系统」判错。
+    if (bridgeReady()) execMode = await detectExecMode();
+    await applyTheme(true);
+    if (!bridgeReady()) { toast("未检测到 KernelSU 模块接口，无法读取素材库", "err"); return; }
+    await withBusy(refresh);
+  }
+
+  $("theme-seg").addEventListener("click", e => {
+    const b = e.target.closest("button[data-mode]");
+    if (b) setThemeMode(b.dataset.mode);
+  });
+  $("btn-refresh").onclick = () => withBusy(refresh);
+  $("btn-scan").onclick = () => withBusy(scan);
+  $("btn-browse").onclick = () => withBusy(() => browse("/sdcard/Download"));
+  // 不用 window.confirm：插件式管理器的 WebView 未必实现 JS 对话框
+  // （原版 APatch 就没实现，confirm 直接返回 false，按钮就成了点了没反应），
+  // 改成页内「点两次」确认，各管理器行为一致。
+  let resetArmed = 0;
+  $("btn-reset").onclick = () => {
+    const btn = $("btn-reset");
+    const now = Date.now();
+    if (now - resetArmed > 5000) {
+      resetArmed = now;
+      btn.textContent = "再点一次确认还原";
+      setTimeout(() => { if (Date.now() - resetArmed >= 5000) { btn.textContent = "恢复原厂"; resetArmed = 0; } }, 5400);
+      return;
+    }
+    resetArmed = 0;
+    btn.textContent = "恢复原厂";
+    withBusy(async () => {
+      const r = await ctl("reset");
+      if (/OK /.test(r)) { toast("已还原原厂第一屏，重启生效", "ok"); await refresh(); }
+      else toast(friendly(r), "err");
+    });
+  };
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => { if (themeMode === "auto") applyTheme(true); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && themeMode === "auto") applyTheme(true);
+  });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

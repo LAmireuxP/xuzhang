@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+__pycache__/
+*.pyc
+
+# Python 虚拟环境
+.venv/
+venv/
+
+# local build / temp
+*.log
+.tmp/

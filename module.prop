@@ -1,0 +1,6 @@
+id=custom_bootlogo
+name=序章
+version=1.0.0
+versionCode=100
+author=LAmireuxP
+description=HyperOS 开机第一屏（bootloader logo）管理器，中文界面。换第一屏、导入、删除、拖拽排序；关闭或卸载后开机会回到原厂 logo。动分区前会先整分区备份，且只改属于开机 logo 的那几张图。支持 KernelSU / SukiSU / APatch / FolkPatch / Magisk。只测过 K30S 至尊纪念版，其他机型自己试。
