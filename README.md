@@ -69,7 +69,15 @@ python tools/logo_convert.py 我的图.png 输出.bmp --size 1080x2400
 
 **能用**：Redmi K30S 至尊纪念版（apollo，HyperOS 4.0 / Android 17，1080×2400，APatch + FolkPatch）。
 
-**用不了**：Redmi K60 Pro（socrates，1440×3200，SukiSU）。实测它**没有 `logo` 分区**，全分区扫描也没有本模块认的 `LOGO!!!!` 容器魔数，`splash` 分区（32.6MB）是**全零的空分区**——也就是这台机器上根本没有可替换的第一屏数据（移植版 ROM，开机大概直接黑屏进动画）。在这类机器上模块会**层层拒绝**：`status` 里 `part=` 为空、`backup` 报失败、`slots auto` 报失败、没有备份就绝不会动分区。
+**用不了**：Redmi K60 Pro（socrates，1440×3200，SukiSU）。这台**没有 `logo` 分区**，而且穷尽搜索都找不到可替换的第一屏数据：
+
+- `splash` 分区（32.6MB）**100% 全零**；`bk01`~`bk51`、`gsort`、`devinfo`、`dip`、`frp` 这一批可疑小分区**也全是零**
+- 全分区扫 `LOGO!!!!` 容器魔数 → 无；扫合法 BMP 头 / PNG / JPEG / 「黑底白字」位图特征（还把 190MB 里的 LZMA、gzip 流解开再扫）→ **无**
+- 系统自带动画（`/system/media/bootanimation.zip`）画的是「Powered by Xiaomi HyperOS」，不是品牌 logo
+
+但开机确实能看到白色 Redmi logo，所以它只能是 **bootloader（abl/xbl）里以某种编码资源的形式**画出来的 —— 这是推断：我能证明的是「没有任何分区含有我能识别的图片数据」。要改它就得改并刷写 bootloader，那是启动链上的东西、写坏会不开机，**不属于本模块的范围**。
+
+在这类机器上模块会**层层拒绝**（绝不瞎写）：`status` 里 `part=` 为空、`backup` 报失败、`slots auto` 报失败，没有备份就绝不会动分区。
 
 其它机器没试过。这个模块靠「魔数 + BMP 头」自动识别 logo 分区里的槽位，**识别不出来就拒绝写入**（界面会报错），不会瞎写。判断你这台行不行：装完在界面里看「当前第一屏」那行——如果meta里报不出分区大小，就是认不出来。命令行版：`bin/ctl.sh status`，看 `part=` 后面有没有内容。
 
